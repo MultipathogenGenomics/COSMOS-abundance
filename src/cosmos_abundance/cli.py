@@ -47,7 +47,7 @@ def parse_args(argv=None):
     commands = parser.add_subparsers(dest="command", required=True)
     prepare = commands.add_parser("prepare", help="Align, trim and cluster a reference FASTA; draw the Mash-distance tree")
     prepare.add_argument("--fasta", required=True)
-    prepare.add_argument("--species", help="Tab-separated ID/species file; optional id and species header")
+    prepare.add_argument("--species", help="Tab-separated id/species file; optional tree_label column with a header")
     prepare.add_argument("--out", required=True)
     prepare.add_argument("--mash-distance-threshold", type=nonnegative_float, default=0.01, help="Complete-linkage clustering threshold (default: 0.01)")
     prepare.add_argument("--min-reference-length", type=positive_int, default=500, help="Minimum ungapped length before and after trimming (default: 500 bp)")

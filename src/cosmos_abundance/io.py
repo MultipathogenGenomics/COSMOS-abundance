@@ -29,27 +29,40 @@ def write_fasta(records: list[dict], output_fasta: str) -> None:
             handle.write(f">{record['id']}\n{record['sequence']}\n")
 
 
-def read_species_map(path: str | None, ids: list[str]) -> dict[str, str]:
+def read_species_metadata(path: str | None, ids: list[str]) -> tuple[dict[str, str], dict[str, str]]:
     if path is None:
-        return dict(zip(ids, ids))
-    species_map = {}
+        return dict(zip(ids, ids)), {seq_id: f"{seq_id} | {seq_id}" for seq_id in ids}
+    species_map, tree_labels = {}, {}
     with open(path) as handle:
-        rows = [row for row in csv.reader(handle, delimiter="\t") if row]
-    if rows and [value.strip() for value in rows[0]] == ["id", "species"]:
-        rows = rows[1:]
+        rows = [[value.strip() for value in row] for row in csv.reader(handle, delimiter="\t") if row]
+    columns = ["id", "species"]
+    if rows and {"id", "species"}.issubset(rows[0]):
+        columns = rows.pop(0)
+        if len(columns) != len(set(columns)) or set(columns) - {"id", "species", "tree_label"}:
+            raise ValueError("Species file header must contain id, species and optionally tree_label")
     for row in rows:
-        if len(row) != 2 or not all(value.strip() for value in row):
-            raise ValueError("Species file must contain two tab-separated columns: id and species")
-        seq_id, species = [value.strip() for value in row]
+        if len(row) != len(columns):
+            raise ValueError("Species file rows must match the tab-separated id, species and optional tree_label columns")
+        values = dict(zip(columns, row))
+        seq_id, species = values["id"], values["species"]
+        if not seq_id or not species:
+            raise ValueError("Species file requires non-empty id and species values")
         if seq_id in species_map:
             raise ValueError(f"Duplicate ID in species file: {seq_id}")
         if " + " in species:
             raise ValueError("Species names cannot contain the reserved cluster separator ' + '")
         species_map[seq_id] = species
+        tree_labels[seq_id] = values.get("tree_label") or f"{species} | {seq_id}"
     missing = set(ids) - set(species_map)
     if missing:
         raise ValueError(f"Missing species for FASTA IDs: {', '.join(sorted(missing))}")
-    return {seq_id: species_map[seq_id] for seq_id in ids}
+    return ({seq_id: species_map[seq_id] for seq_id in ids},
+            {seq_id: tree_labels[seq_id] for seq_id in ids})
+
+
+def read_species_map(path: str | None, ids: list[str]) -> dict[str, str]:
+    species_map, _ = read_species_metadata(path, ids)
+    return species_map
 
 
 def write_tsv(path: str, rows: list[dict], columns: list[str]) -> None:

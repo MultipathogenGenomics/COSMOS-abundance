@@ -30,14 +30,18 @@ token in each header and must be unique.
 An optional tab-separated species file maps those IDs to names:
 
 ```text
-id	species
-reference_1	Aedes aegypti
-reference_2	Aedes albopictus
-reference_3	Culex quinquefasciatus
+id	species	tree_label
+reference_1	Aedes aegypti	Ae. aegypti (reference 1)
+reference_2	Aedes albopictus	Ae. albopictus (reference 2)
+reference_3	Culex quinquefasciatus	Cx. quinquefasciatus
 ```
 
-The `id` / `species` header is optional. Every FASTA ID must have a mapping when
-a species file is supplied. Without it, sequence IDs are used as names.
+The `tree_label` column is optional and changes only the displayed tree label,
+not species names, clustering or abundance assignments. Blank labels fall back
+to `species | FASTA ID`. Include a header when using `tree_label`; the original
+two-column `id` / `species` format still accepts files with or without a header.
+Every FASTA ID must have a mapping when a species file is supplied. Without a
+species file, sequence IDs are used as names.
 
 ```bash
 cosmos-abundance prepare \
@@ -73,7 +77,12 @@ Species removed during filtering/trimming do not contribute to cluster names.
 Sequences with no unambiguous A/C/G/T k-mers are excluded. If the shared region
 is too short, the most gappy sequence is removed and the bounds are recomputed,
 following the original approach. Preparation fails if no suitable reference
-remains. Removal reasons are saved in `removed_sequences.tsv` on successful runs.
+remains. On successful runs, `removed_sequences.tsv` lists every input sequence absent
+from the final representative FASTA. Filtered sequences have their rejection
+reason; non-representative cluster members have reason `clustered` and a
+`representative_id` linking them to the retained sequence. A header-only report
+means every input sequence was retained as a representative. The manifest and
+console summary distinguish filtering from replacement by a representative.
 
 Outputs include:
 
@@ -81,6 +90,8 @@ Outputs include:
 - `assignments.tsv`, `clusters.tsv`, `removed_sequences.tsv`: names and provenance.
 - `mash_tree.png` and `mash_tree.svg`: labelled dendrograms with representative
   labels in bold and the clustering threshold marked for multi-sequence inputs.
+  Figure width is estimated from the longest displayed label, leaving room for
+  the tree before applying tight layout.
 - `alignment.fasta`, `alignment.trimmed.fasta`, `references.trimmed.fasta`:
   intermediate alignments/sequences for inspection.
 - `mash_distances.tsv`, `manifest.json`: distances, parameters, checksums and summary.

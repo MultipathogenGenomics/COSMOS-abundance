@@ -1,15 +1,67 @@
 from pathlib import Path
 import tempfile
 import unittest
+from types import SimpleNamespace
+from unittest.mock import patch
+import shutil
+import warnings
 
 import numpy as np
 
-from cosmos_abundance.io import parse_fasta_file, read_species_map
+from cosmos_abundance.io import parse_fasta_file, read_species_map, read_species_metadata
+from cosmos_abundance.cli import parse_args
+from cosmos_abundance.reference.prepare import prepare_reference
+from cosmos_abundance.reference.plot import expected_figure_width, plot_mash_tree
 from cosmos_abundance.reference.cluster import cluster_sequences_by_distance, identify_best_representatives
 from cosmos_abundance.reference.fasta import find_best_gap_free_region, trim_alignment
 
 
 class ReferenceTests(unittest.TestCase):
+    def test_optional_tree_labels_and_legacy_mapping(self):
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory) / "species.tsv"
+            path.write_text("id\tspecies\ttree_label\na\tSpecies alpha\tShort alpha\nb\tSpecies beta\t\n")
+            species, labels = read_species_metadata(path, ["a", "b"])
+            self.assertEqual(labels, {"a": "Short alpha", "b": "Species beta | b"})
+            self.assertEqual(read_species_map(path, ["a", "b"]), species)
+            path.write_text("a\tSpecies alpha\nb\tSpecies beta\n")
+            self.assertEqual(read_species_map(path, ["a", "b"]), species)
+            path.write_text("tree_label\tspecies\tid\nShort alpha\tSpecies alpha\ta\n")
+            self.assertEqual(read_species_metadata(path, ["a"])[1], {"a": "Short alpha"})
+
+    def test_long_tree_labels_fit_without_layout_warnings(self):
+        labels = {"a": "Wide W label " * 25, "b": "Another label"}
+        self.assertGreater(expected_figure_width(list(labels.values())), expected_figure_width(["short"]))
+        with tempfile.TemporaryDirectory() as directory, warnings.catch_warnings(record=True) as caught:
+            warnings.simplefilter("always")
+            for ids, distances in [(["a", "b"], np.array([[0, 0.02], [0.02, 0]])),
+                                    (["a"], np.zeros((1, 1)))]:
+                path = Path(directory) / f"tree_{len(ids)}.svg"
+                plot_mash_tree(ids, distances, ["a"], 0.01, path, labels)
+                self.assertIn(labels["a"], path.read_text())
+            self.assertFalse(any("layout" in str(item.message).lower() for item in caught), caught)
+
+    def test_prepare_reports_filtered_and_clustered_sequences(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "input.fa").write_text(f">a\n{'ACGT' * 150}\n>b\n{'ACGT' * 150}\n>short\nACGT\n")
+            (root / "species.tsv").write_text("id\tspecies\ttree_label\na\tAlpha\tCustom A\nb\tBeta\tCustom B\nshort\tOther\t\n")
+            args = parse_args(["prepare", "--fasta", str(root / "input.fa"), "--species",
+                               str(root / "species.tsv"), "--out", str(root / "output")])
+            def align(source, output, threads):
+                shutil.copyfile(source, output)
+            with patch("cosmos_abundance.reference.prepare.run_mafft", side_effect=align), \
+                 patch("cosmos_abundance.reference.prepare.subprocess.run", return_value=SimpleNamespace(stdout="test", stderr="")), \
+                 patch("cosmos_abundance.reference.prepare.plot_mash_tree") as plot:
+                prepare_reference(args)
+            import csv
+            with open(root / "output/removed_sequences.tsv") as handle:
+                rows = list(csv.DictReader(handle, delimiter="\t"))
+            self.assertEqual(rows, [{"id": "short", "reason": "short_input", "representative_id": ""},
+                                    {"id": "b", "reason": "clustered", "representative_id": "a"}])
+            self.assertIn("a\tAlpha + Beta", (root / "output/assignments.tsv").read_text())
+            self.assertEqual(plot.call_args.args[-1]["a"], "Custom A")
+
     def test_small_alignment_retains_sequence_and_ids(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
