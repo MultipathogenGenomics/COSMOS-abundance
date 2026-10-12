@@ -27,7 +27,6 @@ def prepare_reference(args) -> None:
     if not kept:
         raise ValueError("No input references meet the length and k-mer requirements")
     write_fasta(kept, output_dir / "input.fasta")
-    print(f"Aligning {len(kept)} references with MAFFT...", flush=True)
     run_mafft(output_dir / "input.fasta", output_dir / "alignment.fasta", args.threads)
     trimmed, trim_removed, trim_bounds = trim_alignment(
         output_dir / "alignment.fasta", output_dir, args.min_reference_length,
