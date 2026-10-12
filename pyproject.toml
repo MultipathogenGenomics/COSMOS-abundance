@@ -1,0 +1,24 @@
+[build-system]
+requires = ["setuptools>=68"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "cosmos-abundance"
+version = "0.1.0"
+description = "Prepare marker reference sets and estimate relative abundance with KMA and kallisto"
+requires-python = ">=3.11"
+license = {file = "LICENSE"}
+readme = "README.md"
+dependencies = [
+    "biopython>=1.81", "numpy>=1.24", "scipy>=1.10",
+    "polars>=1.0", "matplotlib>=3.7", "snakemake>=8,<10",
+]
+
+[project.scripts]
+cosmos-abundance = "cosmos_abundance.cli:main"
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[tool.setuptools.package-data]
+cosmos_abundance = ["workflow/Snakefile", "workflow/rules/*.smk"]

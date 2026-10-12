@@ -1,0 +1,70 @@
+import sys
+
+PYTHON = sys.executable
+READ_ASSIGNMENT_DIR = "read-assignment"
+BOOTSTRAPS = config["bootstraps"]
+
+
+def get_samples(sample_set):
+    return list(config["samples"])
+
+
+def get_reference_fasta(wc):
+    return config["fasta"]
+
+
+def get_fastq_r1(wc):
+    return config["samples"][wc.sample]["read1"]
+
+
+def get_fastq_r2(wc):
+    return config["samples"][wc.sample]["read2"]
+
+
+wildcard_constraints:
+    assignment_reference="reference",
+    sample_set="samples",
+    sample="[A-Za-z0-9][A-Za-z0-9_.-]*"
+
+
+rule all:
+    input:
+        "abundance/abundance_within_filter_pass_reads.tsv",
+        "abundance/abundance_within_all_assigned_reads.tsv",
+        "abundance/filter_pass_read_counts.tsv",
+        "abundance/sample_read_assignment_summary.tsv",
+        "abundance/kallisto_kma_outputs_joined.tsv",
+        "abundance/parameters.json",
+
+
+include: "rules/kma.smk"
+include: "rules/kallisto.smk"
+
+
+rule estimate_abundance:
+    input:
+        kma="read-assignment/reference/samples/kma/results/data/kma_results.all_samples.tsv",
+        kma_assigned="read-assignment/reference/samples/kma/results/data/kma_proportion_mapped.all_samples.tsv",
+        kallisto="read-assignment/reference/samples/kallisto/results/data/kallisto_results.all_samples.tsv",
+        kallisto_assigned="read-assignment/reference/samples/kallisto/results/data/kallisto_proportion_mapped.all_samples.tsv",
+        assignments="assignments.tsv",
+        samples="samples.tsv",
+    output:
+        "abundance/abundance_within_filter_pass_reads.tsv",
+        "abundance/abundance_within_all_assigned_reads.tsv",
+        "abundance/filter_pass_read_counts.tsv",
+        "abundance/sample_read_assignment_summary.tsv",
+        "abundance/kallisto_kma_outputs_joined.tsv",
+        "abundance/parameters.json",
+    params:
+        coverage=config["min_coverage"],
+        identity=config["min_identity"],
+        kma=config["min_kma_count"],
+        kallisto=config["min_kallisto_count"],
+        both="--allow-single-tool" if config["allow_single_tool"] else "",
+    shell:
+        """
+        {PYTHON:q} -m cosmos_abundance estimate --run-dir . \
+            --min-coverage {params.coverage} --min-identity {params.identity} \
+            --min-kma-count {params.kma} --min-kallisto-count {params.kallisto} {params.both}
+        """
