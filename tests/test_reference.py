@@ -17,6 +17,45 @@ from cosmos_abundance.reference.fasta import find_best_gap_free_region, trim_ali
 
 
 class ReferenceTests(unittest.TestCase):
+    def test_n_filter_runs_after_length_filter_before_alignment(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "input.fa").write_text(
+                f">short\n{'N' * 10}\n>high\n{'N' * 31 + 'A' * 569}\n"
+                f">boundary\n{'n' * 30 + 'a' * 570}\n>clear\n{'ACGT' * 150}\n")
+            args = parse_args(["prepare", "--fasta", str(root / "input.fa"), "--out", str(root / "output")])
+            self.assertEqual(args.max_n_fraction, 0.05)
+            with patch("cosmos_abundance.reference.prepare.run_mafft", side_effect=RuntimeError("stop before alignment")) as align:
+                with self.assertRaisesRegex(RuntimeError, "stop before alignment"):
+                    prepare_reference(args)
+                align.assert_called_once()
+            kept = parse_fasta_file(root / "output/input.fasta")
+            self.assertEqual([record["id"] for record in kept], ["boundary", "clear"])
+            report = (root / "output/removed_sequences.tsv").read_text()
+            self.assertIn("high\thigh_n_content\t", report)
+            self.assertIn("short\tshort_input\t", report)
+
+    def test_strict_n_filter_writes_report_when_all_inputs_fail(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            (root / "input.fa").write_text(f">one\n{'A' * 599}N\n")
+            args = parse_args(["prepare", "--fasta", str(root / "input.fa"), "--out", str(root / "output"),
+                               "--max-n-fraction", "0"])
+            with patch("cosmos_abundance.reference.prepare.run_mafft") as align:
+                with self.assertRaisesRegex(ValueError, "N-fraction"):
+                    prepare_reference(args)
+                align.assert_not_called()
+            self.assertIn("one\thigh_n_content", (root / "output/removed_sequences.tsv").read_text())
+
+    def test_n_fraction_argument_bounds(self):
+        from cosmos_abundance.cli import proportion
+        import argparse
+        self.assertEqual(proportion("0"), 0)
+        self.assertEqual(proportion("1"), 1)
+        for value in ["-0.1", "1.1", "nan", "inf"]:
+            with self.assertRaises(argparse.ArgumentTypeError):
+                proportion(value)
+
     def test_optional_tree_labels_and_legacy_mapping(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / "species.tsv"
@@ -47,7 +86,7 @@ class ReferenceTests(unittest.TestCase):
             (root / "input.fa").write_text(f">a\n{'ACGT' * 150}\n>b\n{'ACGT' * 150}\n>short\nACGT\n")
             (root / "species.tsv").write_text("id\tspecies\ttree_label\na\tAlpha\tCustom A\nb\tBeta\tCustom B\nshort\tOther\t\n")
             args = parse_args(["prepare", "--fasta", str(root / "input.fa"), "--species",
-                               str(root / "species.tsv"), "--out", str(root / "output")])
+                               str(root / "species.tsv"), "--out", str(root / "output"), "--keep-intermediate"])
             def align(source, output, threads):
                 shutil.copyfile(source, output)
             with patch("cosmos_abundance.reference.prepare.run_mafft", side_effect=align), \
@@ -59,7 +98,7 @@ class ReferenceTests(unittest.TestCase):
                 rows = list(csv.DictReader(handle, delimiter="\t"))
             self.assertEqual(rows, [{"id": "short", "reason": "short_input", "representative_id": ""},
                                     {"id": "b", "reason": "clustered", "representative_id": "a"}])
-            self.assertIn("a\tAlpha + Beta", (root / "output/assignments.tsv").read_text())
+            self.assertIn("a\tAlpha + Beta", (root / "output/assignment_mapping.tsv").read_text())
             self.assertEqual(plot.call_args.args[-1]["a"], "Custom A")
 
     def test_small_alignment_retains_sequence_and_ids(self):
