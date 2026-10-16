@@ -4,11 +4,37 @@ import re
 import shutil
 import subprocess
 import sys
+from collections import deque
 
 import polars as pl
 
 from . import __version__
-from .io import file_sha256, parse_fasta_file, read_species_map, write_json, write_tsv
+from .io import file_sha256, parse_fasta_file, read_species_map, write_json, write_tsv, clean_run_outputs
+
+
+def execute_workflow(command: list[str], log_path: Path) -> None:
+    print("Workflow [--------------------] starting", end="", flush=True)
+    tail = deque(maxlen=25)
+    with open(log_path, "w") as log, subprocess.Popen(
+        command + ["--nocolor"], stdout=subprocess.PIPE, stderr=subprocess.STDOUT,
+        text=True, bufsize=1,
+    ) as process:
+        for line in process.stdout:
+            log.write(line)
+            log.flush()
+            tail.append(line)
+            match = re.search(r"(\d+) of (\d+) steps", line)
+            if match:
+                done, total = map(int, match.groups())
+                if total:
+                    filled = min(20, done * 20 // total)
+                    print(f"\rWorkflow [{'#' * filled}{'-' * (20 - filled)}] {done}/{total} ({done / total:.0%})", end="", flush=True)
+        status = process.wait()
+    if status:
+        print("\nWorkflow failed.", flush=True)
+        print("".join(tail), file=sys.stderr)
+        raise ValueError(f"Snakemake failed (exit {status}); full log: {log_path}")
+    print("\rWorkflow [####################] 100% complete", flush=True)
 
 
 def read_samples(path: str) -> dict:
@@ -45,11 +71,19 @@ def run_pipeline(args) -> None:
         if args.species:
             raise ValueError("--species is only used with --fasta; prepared references already contain names")
         reference = Path(args.reference).resolve()
-        fasta = reference / "references.fasta"
-        manifest = json.loads((reference / "manifest.json").read_text())
-        if file_sha256(fasta) != manifest["reference_sha256"] or file_sha256(reference / "assignments.tsv") != manifest["assignments_sha256"]:
-            raise ValueError("Prepared reference files have changed since preparation")
-        names = pl.read_csv(reference / "assignments.tsv", separator="\t", infer_schema=False)
+        fasta = reference / "prepared_references.fasta" if reference.is_dir() else reference
+        if fasta.is_file():
+            mapping_file = fasta.parent / "assignment_mapping.tsv"
+        else:
+            # Support reference directories produced by earlier versions.
+            fasta = reference / "references.fasta"
+            mapping_file = reference / "assignments.tsv"
+        manifest_file = fasta.parent / "manifest.json"
+        if manifest_file.exists():
+            manifest = json.loads(manifest_file.read_text())
+            if file_sha256(fasta) != manifest["reference_sha256"] or file_sha256(mapping_file) != manifest["assignments_sha256"]:
+                raise ValueError("Prepared reference files have changed since preparation")
+        names = pl.read_csv(mapping_file, separator="\t", infer_schema=False)
     else:
         fasta = Path(args.fasta).resolve()
         records = parse_fasta_file(fasta)
@@ -77,7 +111,7 @@ def run_pipeline(args) -> None:
         if json.loads((root / "inputs.json").read_text()) != inputs:
             raise ValueError("Run inputs have changed; use a new output directory")
     elif root.exists() and any(root.iterdir()):
-        raise ValueError("Output directory is not an existing COSMOS run; use an empty directory")
+        raise ValueError("Output directory has no retained run inputs; use a new directory. Use --keep-intermediate to allow future resumes")
     else:
         root.mkdir(parents=True, exist_ok=True)
         shutil.copyfile(fasta, root / "references.fasta")
@@ -97,9 +131,11 @@ def run_pipeline(args) -> None:
     command = [sys.executable, "-m", "snakemake", "--snakefile", str(workflow),
                "--directory", str(root), "--configfile", str(root / "config.json"),
                "--cores", str(args.cores), "--rerun-incomplete"]
+    if args.keep_intermediate:
+        command.append("--notemp")
     if args.dry_run:
         command.append("--dry-run")
-    parameters_file = root / "abundance/parameters.json"
+    parameters_file = root / "relative_abundance/parameters.json"
     if parameters_file.exists():
         expected_filters = {"kma:template_coverage": args.min_coverage,
                             "kma:identity_across_covered_length": args.min_identity,
@@ -109,4 +145,9 @@ def run_pipeline(args) -> None:
             expected_filters["identified_by_both_tools"] = True
         if json.loads(parameters_file.read_text())["filters"] != expected_filters:
             command.extend(["--forcerun", "estimate_abundance"])
-    subprocess.run(command, check=True)
+    if args.dry_run:
+        subprocess.run(command, check=True)
+    else:
+        execute_workflow(command, root / "workflow.log")
+    if not args.dry_run:
+        clean_run_outputs(root, args.keep_intermediate)

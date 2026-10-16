@@ -1,8 +1,9 @@
+import json
 from pathlib import Path
 
 import polars as pl
 
-from .io import write_json
+from .io import write_json, clean_run_outputs
 
 
 def _rename_with_prefix(df: pl.DataFrame, prefix: str, keep_cols: list[str]) -> pl.DataFrame:
@@ -153,8 +154,10 @@ def convert_counts_to_abundance(count_df: pl.DataFrame) -> pl.DataFrame:
 
 def estimate_abundance(run_dir: str, min_coverage: float, min_identity: float,
                        min_kma_count: float, min_kallisto_count: float,
-                       require_both: bool = True) -> None:
+                       require_both: bool = True, keep_intermediate: bool = False) -> None:
     root = Path(run_dir)
+    if not (root / "assignments.tsv").is_file() or not (root / "read-assignment").is_dir():
+        raise ValueError("Re-estimation requires a run created with --keep-intermediate")
     names_df = pl.read_csv(root / "assignments.tsv", separator="\t", infer_schema=False)
     assignment_names = dict(zip(names_df["target_id"], names_df["assignment_name"]))
     joined_df, assigned_df = join_kallisto_kma_outputs(root / "read-assignment")
@@ -194,7 +197,7 @@ def estimate_abundance(run_dir: str, min_coverage: float, min_identity: float,
         raise ValueError("Missing read-assignment results for one or more samples")
     summary = summary.join(counts.select("sample", total.alias("filter_pass_reads")), on="sample", how="left")
     summary = summary.with_columns((pl.col("filter_pass_reads") == 0).alias("no_filter_pass_reads"))
-    out = root / "abundance"
+    out = root / "relative_abundance"
     out.mkdir(exist_ok=True)
     joined_df.with_columns(pl.col("target_id").replace_strict(assignment_names).alias("assignment_name")).write_csv(
         out / "kallisto_kma_outputs_joined.tsv", separator="\t")
@@ -202,7 +205,14 @@ def estimate_abundance(run_dir: str, min_coverage: float, min_identity: float,
     convert_counts_to_abundance(counts).write_csv(out / "abundance_within_filter_pass_reads.tsv", separator="\t")
     convert_counts_to_abundance(all_counts).write_csv(out / "abundance_within_all_assigned_reads.tsv", separator="\t")
     summary.write_csv(out / "sample_read_assignment_summary.tsv", separator="\t")
+    provenance = {}
+    for name in ["inputs", "config"]:
+        path = root / f"{name}.json"
+        if path.exists():
+            provenance[name] = json.loads(path.read_text())
     write_json(out / "parameters.json", {"predictor": "kma:readCount", "filters": filters,
                                         "aggregation": "sum counts and maximise quality metrics before filtering",
-                                        "assigned_fragment_to_read_multiplier": 2})
+                                        "assigned_fragment_to_read_multiplier": 2, **provenance})
+    if not keep_intermediate:
+        clean_run_outputs(root, keep_intermediate=False)
     print(f"Abundance tables written to {out}")

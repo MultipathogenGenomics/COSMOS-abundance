@@ -26,6 +26,13 @@ def percentage(value):
     return value
 
 
+def proportion(value):
+    value = nonnegative_float(value)
+    if value > 1:
+        raise argparse.ArgumentTypeError("must be between 0 and 1")
+    return value
+
+
 def occupancy(value):
     value = nonnegative_float(value)
     if not 0 < value <= 1:
@@ -51,6 +58,7 @@ def parse_args(argv=None):
     prepare.add_argument("--out", required=True)
     prepare.add_argument("--mash-distance-threshold", type=nonnegative_float, default=0.01, help="Complete-linkage clustering threshold (default: 0.01)")
     prepare.add_argument("--min-reference-length", type=positive_int, default=500, help="Minimum ungapped length before and after trimming (default: 500 bp)")
+    prepare.add_argument("--max-n-fraction", type=proportion, default=0.05, help="Maximum fraction of N bases before alignment (0 to 1; default: 0.05)")
     prepare.add_argument("--kmer-size", type=positive_int, default=31, help="K-mer size for Mash-like distances (default: 31)")
     prepare.add_argument("--allowed-gap-size", type=int, default=3, help="Maximum intervening gappy columns in the shared region (default: 3)")
     prepare.add_argument("--min-occupancy", type=occupancy, default=0.5, help="Minimum occupied fraction at alignment ends (default: 0.5)")
@@ -71,6 +79,8 @@ def parse_args(argv=None):
     estimate = commands.add_parser("estimate", help="Recompute abundance from a completed run")
     estimate.add_argument("--run-dir", required=True)
     add_filter_args(estimate)
+    for subparser in [prepare, run, estimate]:
+        subparser.add_argument("--keep-intermediate", action="store_true", help="Retain intermediate files after successful completion")
     args = parser.parse_args(argv)
     if args.command == "prepare":
         if args.allowed_gap_size < 0:
@@ -92,6 +102,6 @@ def main(argv=None):
         else:
             from .abundance import estimate_abundance
             estimate_abundance(args.run_dir, args.min_coverage, args.min_identity,
-                               args.min_kma_count, args.min_kallisto_count, not args.allow_single_tool)
+                               args.min_kma_count, args.min_kallisto_count, not args.allow_single_tool, args.keep_intermediate)
     except (ValueError, OSError, subprocess.CalledProcessError) as error:
         raise SystemExit(f"cosmos-abundance: {error}") from error

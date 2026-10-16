@@ -1,6 +1,7 @@
 import csv
 import hashlib
 import json
+import shutil
 from pathlib import Path
 
 from Bio import SeqIO
@@ -82,3 +83,23 @@ def file_sha256(path: str) -> str:
 
 def write_json(path: str, data: dict) -> None:
     Path(path).write_text(json.dumps(data, indent=2) + "\n")
+
+
+def remove_intermediate_files(root: Path, names: list[str]) -> None:
+    # Remove only known workflow outputs, never unrelated files in the directory.
+    for name in names:
+        path = root / name
+        if path.is_symlink() or path.is_file():
+            path.unlink()
+        elif path.is_dir():
+            shutil.rmtree(path)
+
+
+def clean_run_outputs(root: Path, keep_intermediate: bool) -> None:
+    remove_intermediate_files(root, [".snakemake"])
+    if keep_intermediate:
+        return
+    remove_intermediate_files(root, ["read-assignment", "references.fasta", "assignments.tsv",
+                                    "samples.tsv", "inputs.json", "config.json", "workflow.log"])
+    remove_intermediate_files(root / "relative_abundance", ["filter_pass_read_counts.tsv",
+        "abundance_within_all_assigned_reads.tsv", "kallisto_kma_outputs_joined.tsv"])
