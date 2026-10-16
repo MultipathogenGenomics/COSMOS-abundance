@@ -29,12 +29,12 @@ wildcard_constraints:
 
 rule all:
     input:
-        "abundance/abundance_within_filter_pass_reads.tsv",
-        "abundance/abundance_within_all_assigned_reads.tsv",
-        "abundance/filter_pass_read_counts.tsv",
-        "abundance/sample_read_assignment_summary.tsv",
-        "abundance/kallisto_kma_outputs_joined.tsv",
-        "abundance/parameters.json",
+        "relative_abundance/abundance_within_filter_pass_reads.tsv",
+        "relative_abundance/abundance_within_all_assigned_reads.tsv",
+        "relative_abundance/filter_pass_read_counts.tsv",
+        "relative_abundance/sample_read_assignment_summary.tsv",
+        "relative_abundance/kallisto_kma_outputs_joined.tsv",
+        "relative_abundance/parameters.json",
 
 
 include: "rules/kma.smk"
@@ -50,12 +50,12 @@ rule estimate_abundance:
         assignments="assignments.tsv",
         samples="samples.tsv",
     output:
-        "abundance/abundance_within_filter_pass_reads.tsv",
-        "abundance/abundance_within_all_assigned_reads.tsv",
-        "abundance/filter_pass_read_counts.tsv",
-        "abundance/sample_read_assignment_summary.tsv",
-        "abundance/kallisto_kma_outputs_joined.tsv",
-        "abundance/parameters.json",
+        "relative_abundance/abundance_within_filter_pass_reads.tsv",
+        "relative_abundance/abundance_within_all_assigned_reads.tsv",
+        "relative_abundance/filter_pass_read_counts.tsv",
+        "relative_abundance/sample_read_assignment_summary.tsv",
+        "relative_abundance/kallisto_kma_outputs_joined.tsv",
+        "relative_abundance/parameters.json",
     params:
         coverage=config["min_coverage"],
         identity=config["min_identity"],
@@ -64,7 +64,7 @@ rule estimate_abundance:
         both="--allow-single-tool" if config["allow_single_tool"] else "",
     shell:
         """
-        {PYTHON:q} -m cosmos_abundance estimate --run-dir . \
+        {PYTHON:q} -m cosmos_abundance estimate --run-dir . --keep-intermediate \
             --min-coverage {params.coverage} --min-identity {params.identity} \
             --min-kma-count {params.kma} --min-kallisto-count {params.kallisto} {params.both}
         """
