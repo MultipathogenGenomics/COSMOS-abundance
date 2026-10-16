@@ -75,6 +75,7 @@ def prepare_reference(args) -> None:
         "species_file": str(Path(args.species).resolve()) if args.species else None,
         "species_sha256": file_sha256(args.species) if args.species else None,
         "reference_sha256": file_sha256(output_dir / "prepared_references.fasta"),
+        "reference_sequence_lengths": {record["id"]: len(record["sequence"]) for record in representatives},
         "assignments_sha256": file_sha256(output_dir / "assignment_mapping.tsv"),
         "parameters": {key: value for key, value in vars(args).items() if key != "command"},
         "input_sequences": len(records), "retained_sequences": len(kept),

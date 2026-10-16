@@ -1,4 +1,5 @@
 from pathlib import Path
+import json
 import tempfile
 import unittest
 from types import SimpleNamespace
@@ -100,6 +101,12 @@ class ReferenceTests(unittest.TestCase):
                                     {"id": "b", "reason": "clustered", "representative_id": "a"}])
             self.assertIn("a\tAlpha + Beta", (root / "output/assignment_mapping.tsv").read_text())
             self.assertEqual(plot.call_args.args[-1]["a"], "Custom A")
+            manifest = json.loads((root / "output/manifest.json").read_text())
+            self.assertEqual(manifest["reference_sequence_lengths"], {"a": 600})
+            self.assertEqual(manifest["reference_sequence_lengths"], {
+                record["id"]: len(record["sequence"])
+                for record in parse_fasta_file(root / "output/prepared_references.fasta")
+            })
 
     def test_small_alignment_retains_sequence_and_ids(self):
         with tempfile.TemporaryDirectory() as directory:
