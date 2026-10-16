@@ -193,7 +193,9 @@ Normal execution shows a progress bar based on completed workflow jobs; it is
 not an estimate of elapsed time. Snakemake and tool output go to `workflow.log`.
 On failure, error details are printed and the log and intermediates are retained.
 On success, the log is retained only with `--keep-intermediate`.
-`--dry-run` still prints the proposed jobs and retains its configuration.
+`--dry-run` still prints the proposed jobs and retains its configuration. 
+
+If a run fails or pauses, restarting should begin from where it left off. Inspecting the `workflow.log` may give hints as to the reason for failure.
 
 Use `--keep-intermediate` when you want to resume a completed run or change
 filters without remapping. Without it, successful runs retain only the three
