@@ -130,7 +130,7 @@ def run_pipeline(args) -> None:
     workflow = Path(__file__).parent / "workflow/Snakefile"
     command = [sys.executable, "-m", "snakemake", "--snakefile", str(workflow),
                "--directory", str(root), "--configfile", str(root / "config.json"),
-               "--cores", str(args.cores), "--rerun-incomplete"]
+               "--cores", str(args.cores), "--rerun-incomplete", "--keep-going"]
     if args.keep_intermediate:
         command.append("--notemp")
     if args.dry_run:
